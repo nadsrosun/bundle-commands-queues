@@ -5,6 +5,7 @@ namespace SerendipityHQ\Bundle\CommandsQueuesBundle\Entity;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
+use Doctrine\ORM\PersistentCollection;
 use SerendipityHQ\Component\ThenWhen\Strategy\LiveStrategy;
 use SerendipityHQ\Component\ThenWhen\Strategy\NeverRetryStrategy;
 use SerendipityHQ\Component\ThenWhen\Strategy\StrategyInterface;
@@ -203,7 +204,7 @@ class Job
     private $childDependencies;
 
     /**
-     * @var Collection
+     * @var Collection|ArrayCollection|PersistentCollection
      *
      * @ORM\ManyToMany(targetEntity="SerendipityHQ\Bundle\CommandsQueuesBundle\Entity\Job", mappedBy="childDependencies")
      */
@@ -301,9 +302,13 @@ class Job
         }
 
         if (false === $this->childDependencies->contains($job)) {
+            //\Symfony\Component\VarDumper\VarDumper::dump('[Job::addChildDep] ('.$this->getId().') before adding to childs: ' . round(memory_get_usage(true) / 1000000, 2));
             $this->childDependencies->add($job);
+            //\Symfony\Component\VarDumper\VarDumper::dump('[Job::addChildDep] ('.$job->getId().')before adding parent to given Job: ' . round(memory_get_usage(true) / 1000000, 2));
             $job->addParentDependency($this);
         }
+
+        //\Symfony\Component\VarDumper\VarDumper::dump('[Job::addChildDep] after adding: ' . round(memory_get_usage(true) / 1000000, 2));
 
         return $this;
     }
@@ -332,6 +337,7 @@ class Job
             );
         }
 
+        //\Symfony\Component\VarDumper\VarDumper::dump('[Job::addParentDep] ('.$this->getId().') before checking childs: ' . round(memory_get_usage(true) / 1000000, 2));
         if (true === $this->childDependencies->contains($job)) {
             throw new \LogicException(
                 'You cannot add a parent dependecy that is already a child dependency.'
@@ -340,7 +346,9 @@ class Job
         }
 
         if (false === $this->parentDependencies->contains($job)) {
+            //\Symfony\Component\VarDumper\VarDumper::dump('[Job::addParentDep] ('.$this->getId().') before adding to parents: ' . round(memory_get_usage(true) / 1000000, 2));
             $this->parentDependencies->add($job);
+            //\Symfony\Component\VarDumper\VarDumper::dump('[Job::addParentDep] ('.$job->getId().')before adding child to given Job: ' . round(memory_get_usage(true) / 1000000, 2));
             $job->addChildDependency($this);
         }
 
@@ -353,14 +361,12 @@ class Job
     public function createCancelChildsJob() : Job
     {
         // If the Job as child Jobs, create a process to mark them as cancelled
-        $markChildsAsCancelledJob = (new self('queues:internal:mark-as-cancelled', [sprintf('--id=%s', $this->getId())]))
+        return (new self('queues:internal:mark-as-cancelled', [sprintf('--id=%s', $this->getId())]))
             ->setQueue($this->getQueue())
             // This Job has to be successful!
             ->setRetryStrategy(new LiveStrategy(100000))
             ->setPriority(-1)
             ->setQueue($this->getQueue());
-
-        return $markChildsAsCancelledJob;
     }
 
     /**
@@ -369,7 +375,7 @@ class Job
     public function createRetryForFailed() : Job
     {
         // Create a new Job that will retry the original one
-        $retryJob = (new self($this->getCommand(), $this->getArguments()))
+        return (new self($this->getCommand(), $this->getArguments()))
             // First get the retry date
             ->setExecuteAfterTime($this->getRetryStrategy()->retryOn())
             // Then we can increment the current number of attempts setting also the RetryStrategy
@@ -378,8 +384,6 @@ class Job
             ->setQueue($this->getQueue())
             ->setRetryOf($this)
             ->setFirstRetriedJob($this->getFirstRetriedJob() ?? $this);
-
-        return $retryJob;
     }
 
     /**
@@ -424,7 +428,7 @@ class Job
     /**
      * @return int
      */
-    public function getId() : int
+    public function getId()
     {
         return $this->id;
     }
